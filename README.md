@@ -34,6 +34,14 @@ module "rds_asg" {
 }
 ```
 
+#### Notes
+
+You will need to ensure that your database connection code is resilient to failure as the time between scale up and when the RDS finally becomes ready could be several minutes.
+
+If your app is running in Kubernetes, then just let the application pod terminate if it can't connect to the database. If you've deployed your application using a Deployment, then Kubernetes will use incremental back-off to restart your pod until it can connect successfully.
+
+If you're not containerized then you will need to implement the retry logic yourself, or use a library to do it for you.
+
 ##### License
 
 This module is licensed under the MIT license: https://opensource.org/licenses/MIT
