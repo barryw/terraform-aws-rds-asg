@@ -16,17 +16,98 @@ LOGGER.setLevel(logging.INFO)
 RDS_CLIENT = boto3.client('rds')
 ASG_CLIENT = boto3.client('autoscaling')
 
-def scale_down(asg_name, rds_identifier, is_cluster):
-    """
-    Stop an RDS instance/cluster if we've scaled to 0 nodes
-    """
-    LOGGER.info('Received SCALE DOWN event.')
 
-def scale_up(asg_name, rds_identifier, is_cluster):
+def start_or_stop_rds(in_service, rds_identifier, is_cluster):
     """
-    Start an RDS instance/cluster if we've scaled > 0 nodes
+    Start or stop the RDS instance/cluster
     """
-    LOGGER.info('Received SCALE UP event.')
+    if in_service == 0:
+        LOGGER.info('The number of instances in service is 0; stopping RDS.')
+        stop_rds(rds_identifier, is_cluster)
+
+    if in_service > 0:
+        LOGGER.info('The number of instances in service is %s; starting RDS.', in_service)
+        start_rds(rds_identifier, is_cluster)
+
+def stop_rds(rds_identifier, is_cluster):
+    """
+    Stop a RDS instance/cluster
+    """
+    LOGGER.info('Received STOP event.')
+    status = get_rds_status(rds_identifier, is_cluster)
+    if status != 'available':
+        LOGGER.warning('The RDS instance/cluster is already stopped.')
+        return
+
+    if is_cluster:
+        LOGGER.info('Stopping RDS cluster %s', rds_identifier)
+        response = RDS_CLIENT.stop_db_cluster(DBClusterIdentifier=rds_identifier)
+    else:
+        LOGGER.info('Stopping RDS instance %s', rds_identifier)
+        response = RDS_CLIENT.stop_db_instance(DBInstanceIdentifier=rds_identifier)
+
+        LOGGER.debug(response)
+
+def start_rds(rds_identifier, is_cluster):
+    """
+    Start a RDS instance/cluster
+    """
+    LOGGER.info('Received START event.')
+    status = get_rds_status(rds_identifier, is_cluster)
+    if status == 'available':
+        LOGGER.warning('The RDS instance/cluster is already running.')
+        return
+
+    if is_cluster:
+        LOGGER.info('Starting RDS cluster %s', rds_identifier)
+        response = RDS_CLIENT.start_db_cluster(DBClusterIdentifier=rds_identifier)
+    else:
+        LOGGER.info('Starting RDS instance %s', rds_identifier)
+        response = RDS_CLIENT.start_db_instance(DBInstanceIdentifier=rds_identifier)
+
+        LOGGER.debug(response)
+
+def get_rds_status(rds_identifier, is_cluster):
+    """
+    Grab the database instance/cluster
+    """
+    status = ""
+
+    if is_cluster:
+        response = RDS_CLIENT.describe_db_clusters(DBClusterIdentifier=rds_identifier)
+        if 'DBClusters' in response and response['DBClusters']:
+            cluster = response['DBClusters'][0]
+            status = cluster['Status']
+
+    else:
+        response = RDS_CLIENT.describe_db_instances(DBInstanceIdentifier=rds_identifier)
+        if 'DBInstances' in response and response['DBInstances']:
+            instance = response['DBInstances'][0]
+            status = instance['DBInstanceStatus']
+
+    return status
+
+def get_instance_count(asg_name):
+    """
+    Return the number of instances currently in-service
+    """
+    in_service = 0
+
+    response = ASG_CLIENT.describe_auto_scaling_groups(AutoScalingGroupNames=[asg_name])
+    if 'AutoScalingGroups' in response and response['AutoScalingGroups']:
+        asg = response['AutoScalingGroups'][0]
+        if 'Instances' in asg:
+            for instance in asg['Instances']:
+                if instance['LifecycleState'] in ['Pending', 'InService']:
+                    in_service += 1
+
+    else:
+        LOGGER.fatal('No information for ASG named %s', asg_name)
+        in_service = -1
+
+    LOGGER.info('There are (or about to be) %s instances in service', in_service)
+
+    return in_service
 
 def get_rds_status(rds_identifier, is_cluster):
     """
@@ -59,15 +140,13 @@ def lambda_handler(event, context):
 
     rds_identifier = os.getenv('RDS_IDENTIFIER')
     is_cluster = os.getenv('IS_CLUSTER', 'false') == 'true' or os.getenv('IS_CLUSTER', '0') == '1'
-    up_event_arn = os.getenv('UP_EVENT_ARN')
-    down_event_arn = os.getenv('DOWN_EVENT_ARN')
     asg_name = os.getenv('ASG_NAME')
 
     LOGGER.info('RDS_IDENTIFIER=%s', rds_identifier)
     LOGGER.info('IS_CLUSTER=%s', is_cluster)
-    LOGGER.info('START_EVENT_ARN=%s', start_event_arn)
-    LOGGER.info('STOP_EVENT_ARN=%s', stop_event_arn)
     LOGGER.info('ASG_NAME=%s', asg_name)
+
+    LOGGER.info('EVENT=%s', event)
 
     if not rds_identifier:
         LOGGER.fatal('You must set your RDS_IDENTIFIER appropriately.')
@@ -77,10 +156,9 @@ def lambda_handler(event, context):
         LOGGER.fatal('You must set your ASG_NAME appropriately.')
         return
 
-    if 'resources' in event and event['resources']:
-        source_event = event['resources'][0]
-        if source_event == up_event_arn:
-            scale_up(asg_name, rds_identifier, is_cluster)
+    if 'detail' in event and event['detail']:
+        if 'AutoScalingGroupName' in event['detail']:
+            asg_name = event['detail']['AutoScalingGroupName']
 
-        if source_event == down_event_arn:
-            scale_down(asg_name, rds_identifier, is_cluster)
+            in_service = get_instance_count(asg_name)
+            start_or_stop_rds(in_service, rds_identifier, is_cluster)

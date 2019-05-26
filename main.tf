@@ -40,7 +40,7 @@ data "aws_iam_policy_document" "rds-asg-autoscaling" {
       "autoscaling:DescribeAutoScalingGroups"
     ]
     resources = [
-      "${data.aws_autoscaling_group.asg.arn}"
+      "*"
     ]
   }
 }
@@ -110,6 +110,17 @@ resource "aws_iam_role_policy_attachment" "rds-asg-autoscaling" {
   policy_arn = "${aws_iam_policy.rds-asg-rds-autoscaling.arn}"
 }
 
+/* Add a couple of managed policies to allow Lambda to write to CloudWatch & XRay */
+resource "aws_iam_role_policy_attachment" "lambda-basic-execution" {
+  role = "${aws_iam_role.rds-asg.name}"
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda-xray" {
+  role = "${aws_iam_role.rds-asg.name}"
+  policy_arn = "arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess"
+}
+
 /* Create a zip file containing the lambda code */
 data "archive_file" "rds-asg" {
   type        = "zip"
@@ -133,8 +144,6 @@ resource "aws_lambda_function" "rds-asg" {
       RDS_IDENTIFIER = "${var.rds_identifier}"
       IS_CLUSTER = "${var.is_cluster}"
       SKIP_EXECUTION = "${var.skip_execution}"
-      UP_EVENT_ARN = "${aws_cloudwatch_event_rule.up-asg.arn}"
-      DOWN_EVENT_ARN = "${aws_cloudwatch_event_rule.down-asg.arn}"
       ASG_NAME = "${var.asg_name}"
     }
   }

@@ -12,9 +12,9 @@ This is a Terraform module that allows you to control an RDS instance/cluster ba
 
 You can use this for dev/qa/staging environments that you scale down to 0 nodes in off-hours/weekends. This would allow you to automatically stop the associated RDS resource when your dev/qa/staging AutoScaling Group scaled down to 0 nodes, and start it when the group scaled up > 0 EC2 instances.
 
-This module is very similar to this one, but doesn't require you to create an associated schedule for your RDS resource: https://github.com/barryw/terraform-aws-rds-scheduler
+This module is very similar to another one I wrote, but doesn't require you to create an associated schedule for your RDS resource: https://github.com/barryw/terraform-aws-rds-scheduler
 
-The primary motivation is to be able to control costs for non-critical environments.
+The primary motivation is to be able to control costs for non-critical environments. Please do NOT use this on your production RDS! You can use the `skip_execution` variable to filter out environments that you don't want this to run in.
 
 
 #### Usage
@@ -25,7 +25,7 @@ module "rds_asg" {
 
   /* Don't stop RDS in production! */
   skip_execution = "${var.environment == "prod"}"
-  identifier     = "${var.product_name}-${var.environment}"
+  identifier     = "myproduct-dev"
 
   rds_identifier = "${data.aws_rds_cluster.rds.cluster_identifier}"
   is_cluster     = true
