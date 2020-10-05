@@ -19,19 +19,19 @@ EOF
 
 /* Find the AutoScaling Group specified. We need its ARN */
 data "aws_autoscaling_group" "asg" {
-  name = "${var.asg_name}"
+  name = var.asg_name
 }
 
 /* Find the RDS Cluster. We need its ARN */
 data "aws_rds_cluster" "rds-cluster" {
-  count = "${var.is_cluster ? 1 : 0}"
-  cluster_identifier = "${var.rds_identifier}"
+  count = var.is_cluster ? 1 : 0
+  cluster_identifier = var.rds_identifier
 }
 
 /* Find the RDS Instance. We need its ARN */
 data "aws_db_instance" "rds-instance" {
-  count = "${var.is_cluster ? 0 : 1}"
-  db_instance_identifier = "${var.rds_identifier}"
+  count = var.is_cluster ? 0 : 1
+  db_instance_identifier = var.rds_identifier
 }
 
 data "aws_iam_policy_document" "rds-asg-autoscaling" {
@@ -46,7 +46,7 @@ data "aws_iam_policy_document" "rds-asg-autoscaling" {
 }
 
 data "aws_iam_policy_document" "rds-asg-rds-instance" {
-  count = "${var.is_cluster ? 0 : 1}"
+  count = var.is_cluster ? 0 : 1
   statement {
     actions = [
       "rds:DescribeDBInstances",
@@ -54,13 +54,13 @@ data "aws_iam_policy_document" "rds-asg-rds-instance" {
       "rds:StopDBInstance",
     ]
     resources = [
-      "${data.aws_db_instance.rds-instance.arn}"
+      data.aws_db_instance.rds-instance.0.db_instance_arn
     ]
   }
 }
 
 data "aws_iam_policy_document" "rds-asg-rds-cluster" {
-  count = "${var.is_cluster ? 1 : 0}"
+  count = var.is_cluster ? 1 : 0
   statement {
     actions = [
       "rds:DescribeDBClusters",
@@ -68,56 +68,56 @@ data "aws_iam_policy_document" "rds-asg-rds-cluster" {
       "rds:StopDBCluster"
     ]
     resources = [
-      "${data.aws_rds_cluster.rds-cluster.arn}",
+      data.aws_rds_cluster.rds-cluster.0.arn
     ]
   }
 }
 
 resource "aws_iam_policy" "rds-asg-rds-cluster" {
-  count = "${var.is_cluster ? 1 : 0}"
+  count = var.is_cluster ? 1 : 0
   name = "${var.identifier}-rds-asg-rds-cluster"
   path = "/"
-  policy = "${data.aws_iam_policy_document.rds-asg-rds-cluster.json}"
+  policy = data.aws_iam_policy_document.rds-asg-rds-cluster.0.json
 }
 
 resource "aws_iam_policy" "rds-asg-rds-instance" {
-  count = "${var.is_cluster ? 0 : 1}"
+  count = var.is_cluster ? 0 : 1
   name = "${var.identifier}-rds-asg-rds-instance"
   path = "/"
-  policy = "${data.aws_iam_policy_document.rds-asg-rds-instance.json}"
+  policy = data.aws_iam_policy_document.rds-asg-rds-instance.0.json
 }
 
 resource "aws_iam_policy" "rds-asg-rds-autoscaling" {
   name = "${var.identifier}-rds-asg-rds-autoscaling"
   path = "/"
-  policy = "${data.aws_iam_policy_document.rds-asg-autoscaling.json}"
+  policy = data.aws_iam_policy_document.rds-asg-autoscaling.json
 }
 
 resource "aws_iam_role_policy_attachment" "rds-asg-cluster" {
-  count      = "${var.is_cluster ? 1 : 0}"
-  role       = "${aws_iam_role.rds-asg.name}"
-  policy_arn = "${aws_iam_policy.rds-asg-rds-cluster.arn}"
+  count      = var.is_cluster ? 1 : 0
+  role       = aws_iam_role.rds-asg.name
+  policy_arn = aws_iam_policy.rds-asg-rds-cluster.0.arn
 }
 
 resource "aws_iam_role_policy_attachment" "rds-asg-instance" {
-  count      = "${var.is_cluster ? 0 : 1}"
-  role       = "${aws_iam_role.rds-asg.name}"
-  policy_arn = "${aws_iam_policy.rds-asg-rds-instance.arn}"
+  count      = var.is_cluster ? 0 : 1
+  role       = aws_iam_role.rds-asg.name
+  policy_arn = aws_iam_policy.rds-asg-rds-instance.0.arn
 }
 
 resource "aws_iam_role_policy_attachment" "rds-asg-autoscaling" {
-  role       = "${aws_iam_role.rds-asg.name}"
-  policy_arn = "${aws_iam_policy.rds-asg-rds-autoscaling.arn}"
+  role       = aws_iam_role.rds-asg.name
+  policy_arn = aws_iam_policy.rds-asg-rds-autoscaling.arn
 }
 
 /* Add a couple of managed policies to allow Lambda to write to CloudWatch & XRay */
 resource "aws_iam_role_policy_attachment" "lambda-basic-execution" {
-  role = "${aws_iam_role.rds-asg.name}"
+  role = aws_iam_role.rds-asg.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 resource "aws_iam_role_policy_attachment" "lambda-xray" {
-  role = "${aws_iam_role.rds-asg.name}"
+  role = aws_iam_role.rds-asg.name
   policy_arn = "arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess"
 }
 
@@ -130,21 +130,21 @@ data "archive_file" "rds-asg" {
 
 /* The lambda resource */
 resource "aws_lambda_function" "rds-asg" {
-  filename = "${data.archive_file.rds-asg.output_path}"
+  filename = data.archive_file.rds-asg.output_path
   function_name = "${var.identifier}-rds-asg"
   description = "Start and stop an RDS cluster/instance based on AutoScaling Group instance count"
-  role = "${aws_iam_role.rds-asg.arn}"
+  role = aws_iam_role.rds-asg.arn
   handler = "rds_asg.lambda_handler"
   runtime = "python3.7"
   timeout = 300
-  source_code_hash = "${data.archive_file.rds-asg.output_base64sha256}"
+  source_code_hash = data.archive_file.rds-asg.output_base64sha256
 
   environment {
     variables = {
-      RDS_IDENTIFIER = "${var.rds_identifier}"
-      IS_CLUSTER = "${var.is_cluster}"
-      SKIP_EXECUTION = "${var.skip_execution}"
-      ASG_NAME = "${var.asg_name}"
+      RDS_IDENTIFIER = var.rds_identifier
+      IS_CLUSTER = var.is_cluster
+      SKIP_EXECUTION = var.skip_execution
+      ASG_NAME = var.asg_name
     }
   }
 }
@@ -153,17 +153,17 @@ resource "aws_lambda_function" "rds-asg" {
 resource "aws_lambda_permission" "up-asg" {
   statement_id = "AllowUpASGExecutionFromCloudWatch"
   action = "lambda:InvokeFunction"
-  function_name = "${aws_lambda_function.rds-asg.function_name}"
+  function_name = aws_lambda_function.rds-asg.function_name
   principal = "events.amazonaws.com"
-  source_arn = "${aws_cloudwatch_event_rule.up-asg.arn}"
+  source_arn = aws_cloudwatch_event_rule.up-asg.arn
 }
 
 resource "aws_lambda_permission" "down-asg" {
   statement_id = "AllowDownASGExecutionFromCloudWatch"
   action = "lambda:InvokeFunction"
-  function_name = "${aws_lambda_function.rds-asg.function_name}"
+  function_name = aws_lambda_function.rds-asg.function_name
   principal = "events.amazonaws.com"
-  source_arn = "${aws_cloudwatch_event_rule.down-asg.arn}"
+  source_arn = aws_cloudwatch_event_rule.down-asg.arn
 }
 
 resource "aws_cloudwatch_event_rule" "up-asg" {
@@ -192,8 +192,8 @@ PATTERN
 /* is greater than 0 instances, at which point we'll start our RDS */
 resource "aws_cloudwatch_event_target" "up-asg-target" {
   target_id = "${var.identifier}-up-asg"
-  rule = "${aws_cloudwatch_event_rule.up-asg.name}"
-  arn = "${aws_lambda_function.rds-asg.arn}"
+  rule = aws_cloudwatch_event_rule.up-asg.name
+  arn = aws_lambda_function.rds-asg.arn
 }
 
 resource "aws_cloudwatch_event_rule" "down-asg" {
@@ -222,6 +222,6 @@ PATTERN
 /* has reached 0 instances, at which point we'll stop our RDS */
 resource "aws_cloudwatch_event_target" "down-asg-target" {
   target_id = "${var.identifier}-down-asg"
-  rule = "${aws_cloudwatch_event_rule.down-asg.name}"
-  arn = "${aws_lambda_function.rds-asg.arn}"
+  rule = aws_cloudwatch_event_rule.down-asg.name
+  arn = aws_lambda_function.rds-asg.arn
 }

@@ -16,12 +16,19 @@ This module is very similar to another one I wrote, but doesn't require you to c
 
 The primary motivation is to be able to control costs for non-critical environments. Please do NOT use this on your production RDS! You can use the `skip_execution` variable to filter out environments that you don't want this to run in.
 
+#### Versions
+
+Use version `~> 1.1.0` for Terraform versions <= 0.11.x
+Use version `~> 2.0.0` for Terraform versions >= 0.12.x
 
 #### Usage
 
+For Terraform versions <= 0.11.x
+
 ```hcl
 module "rds_asg" {
-  source = "github.com/barryw/terraform-aws-rds-asg"
+  source  = "github.com/barryw/terraform-aws-rds-asg"
+  version = "~> 1.1.0"
 
   /* Don't stop RDS in production! */
   skip_execution = "${var.environment == "prod"}"
@@ -31,6 +38,24 @@ module "rds_asg" {
   is_cluster     = true
 
   asg_name       = "${data.aws_autoscaling_group.asg.name}"
+}
+```
+
+For Terraform versions >= 0.12.x
+
+```hcl
+module "rds_asg" {
+  source  = "github.com/barryw/terraform-aws-rds-asg"
+  version = "~> 2.0.0"
+
+  /* Don't stop RDS in production! */
+  skip_execution = var.environment == "prod"
+  identifier     = "myproduct-dev"
+
+  rds_identifier = data.aws_rds_cluster.rds.cluster_identifier
+  is_cluster     = true
+
+  asg_name       = data.aws_autoscaling_group.asg.name
 }
 ```
 
