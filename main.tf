@@ -1,3 +1,7 @@
+terraform {
+  required_version = ">= 0.12.0"
+}
+
 resource "aws_iam_role" "rds-asg" {
   name = "${var.identifier}-rds-asg"
   assume_role_policy = <<EOF
